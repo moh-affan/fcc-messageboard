@@ -4,12 +4,16 @@ let Message = require("../models/message").Message;
 exports.postThread = async (req, res, next) => {
   try {
     let board = req.params.board;
+    let timestamp = new Date();
+    timestamp.setMilliseconds(0);
+    timestamp.setSeconds(timestamp.getSeconds() + 0);
+    console.log('timestamp', timestamp.toUTCString());
 
     let newThread = await Message.create({
       board: board,
       text: req.body.text,
-      created_on: new Date(),
-      bumped_on: new Date(),
+      created_on: timestamp,
+      bumped_on: timestamp,
       reported: false,
       delete_password: req.body.delete_password,
       replies: []
@@ -26,6 +30,7 @@ exports.getThread = async (req, res) => {
     let board = req.params.board;
     await Message.find({ board: board })
       .sort({ bumped_on: "desc" })
+      .select("-reported -delete_password")
       .limit(10)
       .lean()
       .exec((err, threadArray) => {
@@ -38,13 +43,17 @@ exports.getThread = async (req, res) => {
             });
 
             //limit replies to 3
-            ele.replies = ele.replies.slice(0, 3);
-
-            /*ele.replies.forEach(reply => {
-              reply.delete_password = undefined;
-              reply.reported = undefined;
-            });*/
+            let replies = [];
+            ele.replies.slice(0, 3).forEach(reply => {
+              delete reply.delete_password;
+              delete reply.reported;
+              reply.created_on = ele.bumped_on;
+              replies.push(reply);
+            });
+            ele.replies = replies;
           });
+          console.log(JSON.stringify(threadArray));
+          console.log(JSON.parse(JSON.stringify(threadArray)));
           return res.json(threadArray);
         }
       });
@@ -73,7 +82,7 @@ exports.putThread = async (req, res) => {
     let updateThread = await Message.findById(req.body.thread_id);
     updateThread.reported = true;
     await updateThread.save();
-    return res.send("success");
+    return res.send("reported");
   } catch (err) {
     res.json("error");
   }
